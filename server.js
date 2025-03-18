@@ -70,8 +70,8 @@ app.get('/create-checkout-session', async (req, res) => {
                     quantity: 1,
                 },
             ],
-            success_url: 'https://0015-2404-7a80-a320-c200-7544-a5fe-3146-963e.ngrok-free.app/success',
-            cancel_url: 'https://0015-2404-7a80-a320-c200-7544-a5fe-3146-963e.ngrok-free.app/cancel',
+            success_url: `${process.env.BASE_URL}/success`,  // Render用に環境変数から取得
+            cancel_url: `${process.env.BASE_URL}/cancel`,
             metadata: { userId: userId } // 🚀 ここでユーザーIDを保存
         });
 
@@ -97,7 +97,7 @@ app.post('/webhook', async (req, res) => {
             const isPaidUser = await checkSubscription(userId);
             
             if (!isPaidUser) {
-                const paymentLink = `https://0015-2404-7a80-a320-c200-7544-a5fe-3146-963e.ngrok-free.app/create-checkout-session?userId=${userId}`;
+                const paymentLink = `${process.env.BASE_URL}/create-checkout-session?userId=${userId}`;
                 await replyMessage(userId, `このサービスは月額500円です。\n登録はこちら: ${paymentLink}`);
                 continue;
             }
@@ -154,6 +154,9 @@ app.get('/cancel', (req, res) => {
     res.send('<h1>決済がキャンセルされました。</h1><p>再度お試しください。</p>');
 });
 
-// 📌 サーバー起動
-app.listen(3000, () => console.log('Server is running on port 3000'));
+// 📌 サーバー起動（Render対応）
+const PORT = process.env.PORT || 3000;  // Renderは環境変数PORTを使用
+app.listen(PORT, () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+});
 
