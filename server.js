@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -10,6 +11,11 @@ app.use(express.json());
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const paidUsersFile = 'paidUsers.json';
+
+// 📌 ルートエンドポイント (/) を追加（Renderの動作確認用）
+app.get("/", (req, res) => {
+    res.send("🚀 LINE占いBotが正常に動作しています！");
+});
 
 // 📌 有料ユーザー管理（JSONファイルを使用）
 function getPaidUsers() {
@@ -33,11 +39,11 @@ async function checkSubscription(userId) {
 // 📌 Stripe決済Webhook（ログ出力を追加）
 app.post('/stripe-webhook', express.json(), (req, res) => {
     let event = req.body;
-    console.log("📩 Stripe Webhook受信:", JSON.stringify(event, null, 2)); // 🔍 受信データを確認
+    console.log("📩 Stripe Webhook受信:", JSON.stringify(event, null, 2));
 
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
-        console.log("🔍 Webhookで受け取ったセッション:", session); // 追加
+        console.log("🔍 Webhookで受け取ったセッション:", session);
 
         const userId = session.metadata?.userId;
         if (userId) {
@@ -54,7 +60,7 @@ app.post('/stripe-webhook', express.json(), (req, res) => {
 // 📌 Stripe決済リンクを生成
 app.get('/create-checkout-session', async (req, res) => {
     try {
-        const userId = req.query.userId || "unknown_user"; // 仮に設定（本番環境ではURLパラメータで受け取る）
+        const userId = req.query.userId || "unknown_user";
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
@@ -64,15 +70,15 @@ app.get('/create-checkout-session', async (req, res) => {
                     price_data: {
                         currency: 'jpy',
                         product_data: { name: '占いチャットサブスク' },
-                        unit_amount: 50000, // 500円（Stripeの単位は1/100）
+                        unit_amount: 50000,
                         recurring: { interval: 'month' },
                     },
                     quantity: 1,
                 },
             ],
-            success_url: `${process.env.BASE_URL}/success`,  // Render用に環境変数から取得
+            success_url: `${process.env.BASE_URL}/success`,
             cancel_url: `${process.env.BASE_URL}/cancel`,
-            metadata: { userId: userId } // 🚀 ここでユーザーIDを保存
+            metadata: { userId: userId }
         });
 
         res.json({ url: session.url });
@@ -93,7 +99,6 @@ app.post('/webhook', async (req, res) => {
 
             console.log(`ユーザー(${userId})のメッセージ: ${userMessage}`);
 
-            // **有料会員かどうか確認**
             const isPaidUser = await checkSubscription(userId);
             
             if (!isPaidUser) {
@@ -102,7 +107,6 @@ app.post('/webhook', async (req, res) => {
                 continue;
             }
 
-            // ChatGPTの占いを実行
             const replyText = await getChatGPTResponse(userMessage);
             await replyMessage(userId, replyText);
         }
@@ -142,7 +146,7 @@ async function replyMessage(userId, text) {
             "Content-Type": "application/json"
         }
     });
-}
+});
 
 // 📌 Stripe決済成功後のページ
 app.get('/success', (req, res) => {
@@ -155,8 +159,7 @@ app.get('/cancel', (req, res) => {
 });
 
 // 📌 サーバー起動（Render対応）
-const PORT = process.env.PORT || 3000;  // Renderは環境変数PORTを使用
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server is running on port ${PORT}`);
 });
-
