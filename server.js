@@ -10,20 +10,25 @@ const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const paidUsersFile = 'paidUsers.json';
 
-// 📌 ルートエンドポイント (/) を追加（Renderの動作確認用）
+// 📌 ルートエンドポイント (/) （Render動作確認用）
 app.get("/", (req, res) => {
     res.send("🚀 LINE占いBotが正常に動作しています！");
 });
 
 // 📌 STORESの決済ページURL（固定）
-const PAYMENT_LINK = "https://manabuyts.stores.jp/items/12345678"; 
+const PAYMENT_LINK = "https://manabuyts.stores.jp/items/12345678";
 
 // 📌 有料ユーザー管理（JSONファイルを使用）
 function getPaidUsers() {
     if (!fs.existsSync(paidUsersFile)) {
         fs.writeFileSync(paidUsersFile, JSON.stringify({})); // 🚀 初期化
     }
-    return JSON.parse(fs.readFileSync(paidUsersFile, 'utf8'));
+    try {
+        return JSON.parse(fs.readFileSync(paidUsersFile, 'utf8'));
+    } catch (error) {
+        console.error('JSONファイルの読み込みエラー:', error);
+        return {};
+    }
 }
 
 function addPaidUser(userId) {
@@ -34,7 +39,7 @@ function addPaidUser(userId) {
 
 async function checkSubscription(userId) {
     const paidUsers = getPaidUsers();
-    return paidUsers[userId] ? true : false;
+    return !!paidUsers[userId];
 }
 
 // 📌 決済リンク取得API（LINE以外で使う場合用）
@@ -42,9 +47,23 @@ app.post('/get-payment-link', async (req, res) => {
     res.json({ url: PAYMENT_LINK });
 });
 
-// 📌 LINEのWebhook（メッセージを受け取る）
+// 📌 Webhook（決済通知 & LINEメッセージ処理）
 app.post('/webhook', async (req, res) => {
+    console.log('Webhook received:', req.body);
+
+    // 📌 決済通知（PAY.JPなどの決済サービス用）
+    const userIdFromPayment = req.body?.data?.object?.metadata?.userId;
+    if (userIdFromPayment) {
+        console.log(`決済成功: ${userIdFromPayment}`);
+        addPaidUser(userIdFromPayment);
+        return res.status(200).send('User updated');
+    }
+
+    // 📌 LINEメッセージ処理
     const events = req.body.events;
+    if (!events) {
+        return res.status(400).send('Invalid request');
+    }
 
     for (let event of events) {
         if (event.type === 'message' && event.message.type === 'text') {
@@ -54,7 +73,7 @@ app.post('/webhook', async (req, res) => {
             console.log(`ユーザー(${userId})のメッセージ: ${userMessage}`);
 
             const isPaidUser = await checkSubscription(userId);
-            
+
             if (!isPaidUser) {
                 await replyMessage(userId, `このサービスは月額500円です。\n登録はこちら: ${PAYMENT_LINK}`);
                 return;
@@ -90,15 +109,19 @@ async function getChatGPTResponse(userMessage) {
 
 // 📌 LINE APIでユーザーに返信
 async function replyMessage(userId, text) {
-    await axios.post('https://api.line.me/v2/bot/message/push', {
-        to: userId,
-        messages: [{ type: "text", text }]
-    }, {
-        headers: {
-            "Authorization": `Bearer ${LINE_ACCESS_TOKEN}`,
-            "Content-Type": "application/json"
-        }
-    });
+    try {
+        await axios.post('https://api.line.me/v2/bot/message/push', {
+            to: userId,
+            messages: [{ type: "text", text }]
+        }, {
+            headers: {
+                "Authorization": `Bearer ${LINE_ACCESS_TOKEN}`,
+                "Content-Type": "application/json"
+            }
+        });
+    } catch (error) {
+        console.error(`LINEメッセージ送信エラー (${userId}):`, error);
+    }
 }
 
 // 📌 サーバー起動（Render対応）
