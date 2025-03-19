@@ -146,7 +146,7 @@ async function replyMessage(userId, text) {
             "Content-Type": "application/json"
         }
     });
-};
+});
 
 // 📌 Stripe決済成功後のページ
 app.get('/success', (req, res) => {
@@ -159,7 +159,7 @@ app.get('/cancel', (req, res) => {
 });
 
 // 📌 サーバー起動（Render対応）
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;  // RenderのPORT環境変数を使用
 app.listen(PORT, () => {
     console.log(`🚀 Server is running on port ${PORT}`);
 });
