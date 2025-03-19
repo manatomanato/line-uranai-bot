@@ -146,7 +146,7 @@ async function replyMessage(userId, text) {
             "Content-Type": "application/json"
         }
     });
-});
+};
 
 // 📌 Stripe決済成功後のページ
 app.get('/success', (req, res) => {
