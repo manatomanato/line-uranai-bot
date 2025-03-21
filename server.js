@@ -6,10 +6,10 @@ const admin = require("firebase-admin");
 const app = express();
 app.use(express.json());
 
-// 📌 Firebase 認証情報の設定
-const serviceAccount = require("./firebase-service-account.json");
+// 📌 環境変数からFirebase認証情報を取得
+const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(firebaseConfig)
 });
 const db = admin.firestore();
 
