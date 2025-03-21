@@ -3,16 +3,26 @@ const express = require('express');
 const axios = require('axios');
 const admin = require('firebase-admin');
 
-// 環境変数の読み込み確認
-console.log("FIREBASE_CREDENTIALS:", process.env.FIREBASE_CREDENTIALS ? "LOADED" : "NOT FOUND");
+// Firebase認証情報の設定（デバッグ付き）
+try {
+    console.log("FIREBASE_CREDENTIALS:", process.env.FIREBASE_CREDENTIALS ? "LOADED" : "NOT FOUND");
 
-// Firebase認証情報の設定（Base64環境変数からデコード）
-const serviceAccount = JSON.parse(
-    Buffer.from(process.env.FIREBASE_CREDENTIALS, 'base64').toString('utf8')
-);
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+    const serviceAccount = JSON.parse(
+        Buffer.from(process.env.FIREBASE_CREDENTIALS, 'base64').toString('utf8')
+    );
+
+    console.log("Decoded service account:", serviceAccount);
+
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+
+    console.log("✅ Firebase initialized successfully");
+
+} catch (error) {
+    console.error("❌ Firebase initialization failed:", error);
+}
+
 const db = admin.firestore();
 
 const app = express();
