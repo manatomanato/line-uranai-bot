@@ -1,45 +1,38 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
-const fs = require('fs');
+const admin = require('firebase-admin');
+
+// Firebase認証情報の設定
+const serviceAccount = require("./firebase-service-account.json");
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+const db = admin.firestore();
 
 const app = express();
 app.use(express.json());
 
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const paidUsersFile = 'paidUsers.json';
+const PAYMENT_LINK = "https://manabuyts.stores.jp/items/12345678";
 
 // 📌 ルートエンドポイント (/) （Render動作確認用）
 app.get("/", (req, res) => {
     res.send("🚀 LINE占いBotが正常に動作しています！");
 });
 
-// 📌 STORESの決済ページURL（固定）
-const PAYMENT_LINK = "https://manabuyts.stores.jp/items/12345678";
-
-// 📌 有料ユーザー管理（JSONファイルを使用）
-function getPaidUsers() {
-    if (!fs.existsSync(paidUsersFile)) {
-        fs.writeFileSync(paidUsersFile, JSON.stringify({})); // 🚀 初期化
-    }
-    try {
-        return JSON.parse(fs.readFileSync(paidUsersFile, 'utf8'));
-    } catch (error) {
-        console.error('JSONファイルの読み込みエラー:', error);
-        return {};
-    }
-}
-
-function addPaidUser(userId) {
-    const paidUsers = getPaidUsers();
-    paidUsers[userId] = true;
-    fs.writeFileSync(paidUsersFile, JSON.stringify(paidUsers, null, 2));
-}
-
+// 📌 有料ユーザーをFirestoreからチェック
 async function checkSubscription(userId) {
-    const paidUsers = getPaidUsers();
-    return !!paidUsers[userId];
+    const userRef = db.collection("paidUsers").doc(userId);
+    const doc = await userRef.get();
+    return doc.exists && doc.data().isPaid;
+}
+
+// 📌 有料ユーザーをFirestoreに登録
+async function addPaidUser(userId) {
+    await db.collection("paidUsers").doc(userId).set({ isPaid: true });
+    console.log(`✅ Firestoreにユーザー登録: ${userId}`);
 }
 
 // 📌 決済リンク取得API（LINE以外で使う場合用）
@@ -47,23 +40,33 @@ app.post('/get-payment-link', async (req, res) => {
     res.json({ url: PAYMENT_LINK });
 });
 
-// 📌 Webhook（決済通知 & LINEメッセージ処理）
+// 📌 StripeのWebhookエンドポイント（決済成功時に有料ユーザー登録）
+app.post('/stripe-webhook', express.json(), async (req, res) => {
+    let event;
+    try {
+        event = req.body;
+    } catch (err) {
+        console.error("Webhookエラー:", err);
+        return res.sendStatus(400);
+    }
+
+    if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+        const userId = session.metadata?.userId;
+
+        if (userId) {
+            await addPaidUser(userId);
+        }
+    }
+
+    res.sendStatus(200);
+});
+
+// 📌 LINEのWebhook（メッセージ処理 & 有料ユーザー確認）
 app.post('/webhook', async (req, res) => {
     console.log('Webhook received:', req.body);
-
-    // 📌 決済通知（PAY.JPなどの決済サービス用）
-    const userIdFromPayment = req.body?.data?.object?.metadata?.userId;
-    if (userIdFromPayment) {
-        console.log(`決済成功: ${userIdFromPayment}`);
-        addPaidUser(userIdFromPayment);
-        return res.status(200).send('User updated');
-    }
-
-    // 📌 LINEメッセージ処理
     const events = req.body.events;
-    if (!events) {
-        return res.status(400).send('Invalid request');
-    }
+    if (!events) return res.status(400).send('Invalid request');
 
     for (let event of events) {
         if (event.type === 'message' && event.message.type === 'text') {
@@ -71,12 +74,11 @@ app.post('/webhook', async (req, res) => {
             const userMessage = event.message.text;
 
             console.log(`ユーザー(${userId})のメッセージ: ${userMessage}`);
-
             const isPaidUser = await checkSubscription(userId);
 
             if (!isPaidUser) {
                 await replyMessage(userId, `このサービスは月額500円です。\n登録はこちら: ${PAYMENT_LINK}`);
-                return;
+                continue;
             }
 
             const replyText = await getChatGPTResponse(userMessage);
@@ -124,7 +126,7 @@ async function replyMessage(userId, text) {
     }
 }
 
-// 📌 サーバー起動（Render対応）
+// 📌 サーバー起動
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
     console.log(`🚀 Server is running on port ${PORT}`);
