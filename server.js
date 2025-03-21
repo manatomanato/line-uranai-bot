@@ -3,8 +3,13 @@ const express = require('express');
 const axios = require('axios');
 const admin = require('firebase-admin');
 
-// Firebase認証情報の設定
-const serviceAccount = require("./firebase-service-account.json");
+// 環境変数の読み込み確認
+console.log("FIREBASE_CREDENTIALS:", process.env.FIREBASE_CREDENTIALS ? "LOADED" : "NOT FOUND");
+
+// Firebase認証情報の設定（Base64環境変数からデコード）
+const serviceAccount = JSON.parse(
+    Buffer.from(process.env.FIREBASE_CREDENTIALS, 'base64').toString('utf8')
+);
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
