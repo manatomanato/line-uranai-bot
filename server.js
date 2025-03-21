@@ -1,61 +1,41 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
-const admin = require('firebase-admin');
-
-// Firebase認証情報の設定（デバッグ付き）
-try {
-    console.log("FIREBASE_CREDENTIALS:", process.env.FIREBASE_CREDENTIALS ? "LOADED" : "NOT FOUND");
-
-    const serviceAccount = JSON.parse(
-        Buffer.from(process.env.FIREBASE_CREDENTIALS, 'base64').toString('utf8')
-    );
-
-    console.log("Decoded service account:", serviceAccount);
-
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
-
-    console.log("✅ Firebase initialized successfully");
-
-} catch (error) {
-    console.error("❌ Firebase initialization failed:", error);
-}
-
-const db = admin.firestore();
+const admin = require("firebase-admin");
 
 const app = express();
 app.use(express.json());
+
+// 📌 Firebase 認証情報の設定
+const serviceAccount = require("./firebase-service-account.json");
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+const db = admin.firestore();
 
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PAYMENT_LINK = "https://manabuyts.stores.jp/items/12345678";
 
-// 📌 ルートエンドポイント (/) （Render動作確認用）
+// 📌 ルートエンドポイント (Render動作確認用)
 app.get("/", (req, res) => {
     res.send("🚀 LINE占いBotが正常に動作しています！");
 });
 
-// 📌 有料ユーザーをFirestoreからチェック
+// 📌 有料ユーザーをチェック
 async function checkSubscription(userId) {
     const userRef = db.collection("paidUsers").doc(userId);
     const doc = await userRef.get();
     return doc.exists && doc.data().isPaid;
 }
 
-// 📌 有料ユーザーをFirestoreに登録
+// 📌 有料ユーザーを登録（Webhook用）
 async function addPaidUser(userId) {
     await db.collection("paidUsers").doc(userId).set({ isPaid: true });
     console.log(`✅ Firestoreにユーザー登録: ${userId}`);
 }
 
-// 📌 決済リンク取得API（LINE以外で使う場合用）
-app.post('/get-payment-link', async (req, res) => {
-    res.json({ url: PAYMENT_LINK });
-});
-
-// 📌 StripeのWebhookエンドポイント（決済成功時に有料ユーザー登録）
+// 📌 Stripe Webhookエンドポイント
 app.post('/stripe-webhook', express.json(), async (req, res) => {
     let event;
     try {
@@ -77,11 +57,13 @@ app.post('/stripe-webhook', express.json(), async (req, res) => {
     res.sendStatus(200);
 });
 
-// 📌 LINEのWebhook（メッセージ処理 & 有料ユーザー確認）
+// 📌 LINE Webhook（有料ユーザーをチェック）
 app.post('/webhook', async (req, res) => {
     console.log('Webhook received:', req.body);
     const events = req.body.events;
-    if (!events) return res.status(400).send('Invalid request');
+    if (!events) {
+        return res.status(400).send('Invalid request');
+    }
 
     for (let event of events) {
         if (event.type === 'message' && event.message.type === 'text') {
@@ -100,11 +82,10 @@ app.post('/webhook', async (req, res) => {
             await replyMessage(userId, replyText);
         }
     }
-
     res.sendStatus(200);
 });
 
-// 📌 ChatGPT APIを使って占いのメッセージを取得
+// 📌 ChatGPT APIを使って占いメッセージを取得
 async function getChatGPTResponse(userMessage) {
     try {
         const response = await axios.post('https://api.openai.com/v1/chat/completions', {
